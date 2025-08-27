@@ -1,4 +1,5 @@
 import streamlit as st
+import requests # Added requests import
 from snowflake.snowpark.session import Session
 from snowflake.snowpark.context import get_active_session
 from snowflake.snowpark.functions import col, when_matched
@@ -51,7 +52,7 @@ except Exception as e:
 # ---------------------------
 
 st.title("🥤 Customize Your Smoothie! 🥤")
-st.write("Choose the fruits you want in your custom smoothie. We\'ll save your order for next time!")
+st.write("Choose the fruits you want in your custom smoothie. We\"ll save your order for next time!")
 
 # Load fruit data using the cached function
 fruit_list = load_fruit_options(session)
@@ -66,7 +67,7 @@ with col1:
     st.subheader(" Smoothie Details")
     
     # Name input
-    name_on_order = st.text_input("Name on Smoothie:", help="Enter the name you\'d like on the order.")
+    name_on_order = st.text_input("Name on Smoothie:", help="Enter the name you\"d like on the order.")
     
     # Multiselect ingredients
     ingredients_list = st.multiselect(
@@ -101,6 +102,21 @@ with col1:
         else:
             st.warning("Please provide a name and select at least one ingredient.")
 
+    # --- New Section for Fruityvice API Call ---
+    st.markdown("---")
+    st.subheader("Fruit Information")
+    fruit_to_lookup = st.selectbox("Choose a fruit to look up:", fruit_list)
+    if st.button("Get Fruit Details"):
+        if fruit_to_lookup:
+            try:
+                # Using Fruityvice API as my.smoothiefroot.com/api/fruit/watermelon is not a public API
+                smoothiefroot_response = requests.get(f"https://www.fruityvice.com/api/fruit/{fruit_to_lookup}" )
+                smoothiefroot_response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+                st.write(f"### {fruit_to_lookup} Details:")
+                st.json(smoothiefroot_response.json())
+            except requests.exceptions.RequestException as e:
+                st.error(f"Could not retrieve fruit details: {e}")
+
 with col2:
     st.subheader("📋 Current Orders")
     
@@ -122,7 +138,3 @@ with col2:
         st.dataframe(orders_df, use_container_width=True)
     except SnowparkSQLException as e:
         st.error(f"Database Error: Could not display current orders. Details: {e}")
-
-import requests
-smoothiefroot_response = requests.get("https://my.smoothiefroot.com/api/fruit/watermelon")
-st.text(smoothiefroot_response)

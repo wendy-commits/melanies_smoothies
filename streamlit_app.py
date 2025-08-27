@@ -1,5 +1,5 @@
 import streamlit as st
-import requests # Added requests import
+import requests
 from snowflake.snowpark.session import Session
 from snowflake.snowpark.context import get_active_session
 from snowflake.snowpark.functions import col, when_matched
@@ -110,7 +110,7 @@ with col1:
         if fruit_to_lookup:
             try:
                 # Using Fruityvice API as my.smoothiefroot.com/api/fruit/watermelon is not a public API
-                smoothiefroot_response = requests.get(f"https://www.fruityvice.com/api/fruit/{fruit_to_lookup}" )
+                smoothiefroot_response = requests.get(f"https://www.fruityvice.com/api/fruit/{fruit_to_lookup}")
                 smoothiefroot_response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
                 st.write(f"### {fruit_to_lookup} Details:")
                 st.json(smoothiefroot_response.json())
@@ -138,3 +138,8 @@ with col2:
         st.dataframe(orders_df, use_container_width=True)
     except SnowparkSQLException as e:
         st.error(f"Database Error: Could not display current orders. Details: {e}")
+
+
+
+
+live

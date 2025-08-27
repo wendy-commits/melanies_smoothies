@@ -14,7 +14,7 @@ def create_session():
     except Exception:
         # Fallback for local / Streamlit Cloud
         connection_parameters = {
-            "account": os.getenv(RGDDDWQ-PRB75287),
+            "account": os.getenv("RGDDDWQ-PRB75287"),
             "user": os.getenv("wendy87226"),
             "password": os.getenv("Snowflake-2025"),
             "role": os.getenv("SYSADMIN"),

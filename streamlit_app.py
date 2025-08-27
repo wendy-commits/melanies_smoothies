@@ -1,145 +1,69 @@
 import streamlit as st
-import requests
-from snowflake.snowpark.session import Session
+from snowflake.snowpark import Session
 from snowflake.snowpark.context import get_active_session
-from snowflake.snowpark.functions import col, when_matched
-from snowflake.snowpark.exceptions import SnowparkSQLException
-
-# Set page configuration for a better layout
-st.set_page_config(page_title="Fruity Smoothies", page_icon="🥤", layout="wide")
+from snowflake.snowpark.functions import col
+import os
 
 # ---------------------------
-# Session Handling & Caching
+# Session handling
 # ---------------------------
-
-# Use st.cache_resource to create the Snowflake session only once.
-@st.cache_resource
 def create_session():
-    """
-    Creates and caches a Snowflake Snowpark session.
-    Uses st.secrets for credentials.
-    """
     try:
-        # Try to get the active session for a Snowflake Native App
+        # Try Native App (inside Snowflake)
         return get_active_session()
-    except SnowparkSQLException:
-        # Fallback for local/Streamlit Cloud using secrets.toml
-        connection_parameters = st.secrets["snowflake"]
+    except Exception:
+        # Fallback for local / Streamlit Cloud
+        connection_parameters = {
+            "account": os.getenv("RGDDDWQ-PRB75287"),
+            "user": os.getenv("wendy87226"),
+            "password": os.getenv("Snowflake-2025"),
+            "role": os.getenv("SYSADMIN"),
+            "warehouse": os.getenv("COMPUTE_WH"),
+            "database": "SMOOTHIES",
+            "schema": "PUBLIC"
+        }
         return Session.builder.configs(connection_parameters).create()
 
-# Use st.cache_data to load the fruit options only once per session.
-@st.cache_data
-def load_fruit_options(_session):
-    """
-    Loads and caches the list of fruit options from Snowflake.
-    """
-    try:
-        fruit_df = _session.table("smoothies.public.fruit_options").select(col("FRUIT_NAME")).order_by(col("FRUIT_NAME"))
-        return [row["FRUIT_NAME"] for row in fruit_df.collect()]
-    except SnowparkSQLException as e:
-        st.error(f"Database Error: Could not load fruit options. Please check the table `fruit_options`. Details: {e}")
-        return [] # Return an empty list on error
-
-# Establish the session
-try:
-    session = create_session()
-except Exception as e:
-    st.error(f"Error connecting to Snowflake. Please check your credentials in Streamlit secrets. Details: {e}")
-    st.stop() # Stop the app if the connection fails
+session = create_session()
 
 # ---------------------------
 # Streamlit UI
 # ---------------------------
+st.title("🥤 Customize your Smoothie 🥤")
+st.write("Choose the fruits you want in your custom smoothie!")
 
-st.title("🥤 Customize Your Smoothie! 🥤")
-st.write("Choose the fruits you want in your custom smoothie. We\"ll save your order for next time!")
+# Name input
+name_on_order = st.text_input("Name on Smoothie")
+if name_on_order:
+    st.write("The name of your smoothie will be:", name_on_order)
 
-# Load fruit data using the cached function
-fruit_list = load_fruit_options(session)
-if not fruit_list:
-    st.warning("No fruit options available at the moment. Please check back later.")
-    st.stop()
+# Load fruits
+fruit_df = session.table("smoothies.public.fruit_options").select(col("FRUIT_NAME"))
+fruit_list = [row["FRUIT_NAME"] for row in fruit_df.collect()]
 
-# Use columns for a cleaner layout
-col1, col2 = st.columns([1, 2]) # Create two columns
+# Multiselect ingredients
+ingredients_list = st.multiselect(
+    "Choose up to 5 ingredients:",
+    fruit_list,
+    max_selections=5
+)
 
-with col1:
-    st.subheader(" Smoothie Details")
-    
-    # Name input
-    name_on_order = st.text_input("Name on Smoothie:", help="Enter the name you\"d like on the order.")
-    
-    # Multiselect ingredients
-    ingredients_list = st.multiselect(
-        "Choose up to 5 ingredients:",
-        fruit_list,
-        max_selections=5,
-        key="ingredients_multiselect" # Add a key for state management
-    )
-    
+# Order handling
+if ingredients_list:
     ingredients_string = ", ".join(ingredients_list)
+    st.write("✅ Your smoothie will include:", ingredients_string)
 
-    # Order handling
-    if st.button("Submit / Update Order", disabled=(not name_on_order or not ingredients_list)):
-        if name_on_order and ingredients_list:
-            try:
-                # Use MERGE to insert a new order or update an existing one for the same name
-                orders_table = session.table("smoothies.public.orders")
-                source_df = session.create_dataframe(
-                    [{"NAME_ON_ORDER": name_on_order, "INGREDIENTS": ingredients_string}]
-                )
-                
-                orders_table.merge(
-                    source=source_df,
-                    join_expr=(orders_table["NAME_ON_ORDER"] == source_df["NAME_ON_ORDER"]),
-                    clauses=[when_matched().update({"INGREDIENTS": source_df["INGREDIENTS"]})]
-                )
-                
-                st.success(f"Your order for **{name_on_order}** has been submitted/updated! 🍹", icon="✅")
-                
-            except SnowparkSQLException as e:
-                st.error(f"Database Error: Could not submit your order. Details: {e}")
-        else:
-            st.warning("Please provide a name and select at least one ingredient.")
+    if st.button("Submit Order"):
+        # Insert into orders table
+        session.table("smoothies.public.orders").insert(
+            {"INGREDIENTS": ingredients_string, "NAME_ON_ORDER": name_on_order}
+        )
+        st.success(f"Your Smoothie is ordered! 🍹 {name_on_order}", icon="✅")
 
-    # --- New Section for Fruityvice API Call ---
-    st.markdown("---")
-    st.subheader("Fruit Information")
-    fruit_to_lookup = st.selectbox("Choose a fruit to look up:", fruit_list)
-    if st.button("Get Fruit Details"):
-        if fruit_to_lookup:
-            try:
-                # Using Fruityvice API as my.smoothiefroot.com/api/fruit/watermelon is not a public API
-                smoothiefroot_response = requests.get(f"https://www.fruityvice.com/api/fruit/{fruit_to_lookup}")
-                smoothiefroot_response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
-                st.write(f"### {fruit_to_lookup} Details:")
-                st.json(smoothiefroot_response.json())
-            except requests.exceptions.RequestException as e:
-                st.error(f"Could not retrieve fruit details: {e}")
-
-with col2:
-    st.subheader("📋 Current Orders")
-    
-    # Display the smoothie being built
-    if name_on_order or ingredients_list:
-        st.markdown("#### Your Creation:")
-        with st.container(border=True):
-            if name_on_order:
-                st.write(f"**Name:** {name_on_order}")
-            if ingredients_list:
-                st.write(f"**Ingredients:** {ingredients_string}")
-            else:
-                st.write("_Select some ingredients!_")
-        st.markdown("---") # Divider
-
-    # Show all existing orders
-    try:
-        orders_df = session.table("smoothies.public.orders").order_by(col("NAME_ON_ORDER")).collect()
+        # Show all existing orders
+        orders_df = session.table("smoothies.public.orders").select("NAME_ON_ORDER", "INGREDIENTS").collect()
+        st.subheader("📋 Current Orders")
         st.dataframe(orders_df, use_container_width=True)
-    except SnowparkSQLException as e:
-        st.error(f"Database Error: Could not display current orders. Details: {e}")
 
 
-
-
-live
+    

@@ -122,3 +122,7 @@ with col2:
         st.dataframe(orders_df, use_container_width=True)
     except SnowparkSQLException as e:
         st.error(f"Database Error: Could not display current orders. Details: {e}")
+
+import requests
+smoothiefroot_response = requests.get("https://my.smoothiefroot.com/api/fruit/watermelon")
+st.text(smoothiefroot_response)

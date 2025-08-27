@@ -1,47 +1,67 @@
-# Import python packages
 import streamlit as st
-from snowflake.snowpark.functions import col
+from snowflake.snowpark import Session
 from snowflake.snowpark.context import get_active_session
+from snowflake.snowpark.functions import col
+import os
 
-# Write directly to the app
-st.title(f" :cup_with_straw: Customize your Smoothie :cup_with_straw: ")
-st.write(
-  """Choose the fruits you want in your custom smoothie!"""
-)
+# ---------------------------
+# Session handling
+# ---------------------------
+def create_session():
+    try:
+        # Try Native App (inside Snowflake)
+        return get_active_session()
+    except Exception:
+        # Fallback for local / Streamlit Cloud
+        connection_parameters = {
+            "account": os.getenv("RGDDDWQ-PRB75287"),
+            "user": os.getenv("wendy87226"),
+            "password": os.getenv("Snowflake-2025"),
+            "role": os.getenv("SYSADMIN"),
+            "warehouse": os.getenv("COMPUTE_WH"),
+            "database": "SMOOTHIES",
+            "schema": "PUBLIC"
+        }
+        return Session.builder.configs(connection_parameters).create()
 
+session = create_session()
+
+# ---------------------------
+# Streamlit UI
+# ---------------------------
+st.title("🥤 Customize your Smoothie 🥤")
+st.write("Choose the fruits you want in your custom smoothie!")
+
+# Name input
 name_on_order = st.text_input("Name on Smoothie")
-st.write("The name of your smoothie will be:", name_on_order)
+if name_on_order:
+    st.write("The name of your smoothie will be:", name_on_order)
 
+# Load fruits
+fruit_df = session.table("smoothies.public.fruit_options").select(col("FRUIT_NAME"))
+fruit_list = [row["FRUIT_NAME"] for row in fruit_df.collect()]
 
-
-session = get_active_session()
-my_dataframe = session.table("smoothies.public.fruit_options").select(col('FRUIT_NAME'))
-# st.dataframe(data=my_dataframe, use_container_width=True)
-
-ingredients_list = st.multiselect (
-    'Choose up to 5 ingredients:'
-    , my_dataframe
-    , max_selections=5
+# Multiselect ingredients
+ingredients_list = st.multiselect(
+    "Choose up to 5 ingredients:",
+    fruit_list,
+    max_selections=5
 )
 
+# Order handling
 if ingredients_list:
+    ingredients_string = ", ".join(ingredients_list)
+    st.write("✅ Your smoothie will include:", ingredients_string)
 
-    ingredients_string=''
+    if st.button("Submit Order"):
+        # Insert into orders table
+        session.table("smoothies.public.orders").insert(
+            {"INGREDIENTS": ingredients_string, "NAME_ON_ORDER": name_on_order}
+        )
+        st.success(f"Your Smoothie is ordered! 🍹 {name_on_order}", icon="✅")
 
-    for fruit_chosen in ingredients_list:
-        ingredients_string += fruit_chosen + ' '
+        # Show all existing orders
+        orders_df = session.table("smoothies.public.orders").select("NAME_ON_ORDER", "INGREDIENTS").collect()
+        st.subheader("📋 Current Orders")
+        st.dataframe(orders_df, use_container_width=True)
 
-    #st.write(ingredients_string)
-
-    my_insert_stmt = """ insert into smoothies.public.orders(ingredients,name_on_order)
-            values ('""" + ingredients_string + """','""" + name_on_order + """')"""
-
-    st.write(my_insert_stmt)
-   
-    
-    time_to_insert = st.button ('Submit Order')
-    
-    if time_to_insert:
-        session.sql(my_insert_stmt).collect()
-        
-        st.success('Your Smoothie is ordered!,'+ name_on_order, icon="✅")
